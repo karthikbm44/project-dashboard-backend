@@ -1,0 +1,53 @@
+name: CI Build and Test
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: test_secret
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Docker Compose availability
+        run: docker compose version
+
+      - name: Build Docker Compose services
+        run: docker compose build --pull
+
+      - name: Start Docker Compose services
+        run: |
+          docker compose up -d
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if curl --silent --fail http://localhost:5000; then
+              echo "Backend is available"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not start in time"
+          docker compose logs backend
+          exit 1
+
+      - name: Run package tests
+        run: npm test
+
+      - name: Tear down Compose services
+        if: always()
+        run: docker compose down -v
